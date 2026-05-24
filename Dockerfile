@@ -17,7 +17,7 @@ COPY migrations ./migrations
 RUN cargo build --release
 
 # Runtime stage - distroless (no shell, no package manager, minimal attack surface)
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/cc-debian12
 
 LABEL maintainer="Rafiul Ilmi <muhammadrafiulilmi@gmail.com>"
 LABEL description="Indonesian Commute Schedule API"
@@ -28,9 +28,6 @@ WORKDIR /app
 # Copy binary and migrations from builder
 COPY --from=builder /usr/src/inamute/target/release/inamute .
 COPY --from=builder /usr/src/inamute/migrations ./migrations
-
-# Set proper permissions (readable and executable only)
-RUN chmod 555 /app/inamute
 
 EXPOSE 8080
 

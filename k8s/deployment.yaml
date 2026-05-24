@@ -15,6 +15,8 @@ spec:
       labels:
         app: inamute
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: inamute
           image: ghcr.io/ilmimris/inamute:latest

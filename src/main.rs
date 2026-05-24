@@ -156,8 +156,8 @@ async fn get_stations(
     
     match check_rate_limit(&state, &peer_addr, api_key) {
         Ok(remaining) => {
-            match sqlx::query_as::<_, (String, String, String, Option<f64>, Option<f64>, Option<String>)>(
-                "SELECT station_code, name, line, latitude, longitude, address FROM stations ORDER BY id"
+            match sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, Option<String>)>(
+                "SELECT station_code, name, line, latitude::text, longitude::text, address FROM stations ORDER BY id"
             )
             .fetch_all(&state.db)
             .await
@@ -168,8 +168,8 @@ async fn get_stations(
                             code: r.0.clone(),
                             name: r.1.clone(),
                             line: r.2.clone(),
-                            latitude: r.3,
-                            longitude: r.4,
+                            latitude: r.3.as_ref().and_then(|s| s.parse::<f64>().ok()),
+                            longitude: r.4.as_ref().and_then(|s| s.parse::<f64>().ok()),
                             address: r.5.clone(),
                         }
                     }).collect();
