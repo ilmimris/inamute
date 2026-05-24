@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inamute
+  namespace: inamute
+  labels:
+    app: inamute
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inamute
+  template:
+    metadata:
+      labels:
+        app: inamute
+    spec:
+      containers:
+        - name: inamute
+          image: ghcr.io/ilmimris/inamute:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://inamute:inamute_s3cur3_p@ss_2024@inamute-db-rw.cnpg-databases.svc.cluster.local:5432/inamute"
+            - name: BIND_ADDR
+              value: "0.0.0.0:8080"
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
