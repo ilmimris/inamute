@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="Inamute - Indonesian Commute Schedule API">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>inamute.mris.dev</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap">
+    <style>
+        :root {
+            --ink: #0a0a0a;
+            --muted: #aeb8c1;
+            --field: #12171d;
+            --paper: #e5e4e2;
+            --signal: #cfd6dc;
+            --rust: #7f93a3;
+            --panel: #536878;
+            --panel-strong: #435665;
+            --line: rgba(229, 228, 226, .18);
+            --shadow: rgba(0, 0, 0, .32);
+            --display: "Instrument Serif", Georgia, serif;
+            --mono: "Space Mono", monospace;
+        }
+        * { box-sizing: border-box; }
+        html {
+            background: var(--field);
+            color: var(--paper);
+            font-family: var(--mono);
+            color-scheme: dark;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: radial-gradient(circle at 18% 14%, rgba(83, 104, 120, .44), transparent 24rem),
+                        radial-gradient(circle at 82% 8%, rgba(229, 228, 226, .1), transparent 28rem),
+                        radial-gradient(circle at 50% 100%, rgba(83, 104, 120, .2), transparent 36rem),
+                        linear-gradient(180deg, #e5e4e208, #0a0a0a00 30%),
+                        linear-gradient(90deg, rgba(229, 228, 226, .035) 1px, transparent 1px),
+                        linear-gradient(rgba(229, 228, 226, .035) 1px, transparent 1px),
+                        var(--field);
+            background-size: auto, auto, auto, auto, 48px 48px, 48px 48px, auto;
+        }
+        main {
+            margin: 0 auto;
+            max-width: 1180px;
+            padding: 1rem;
+        }
+        img { max-width: 100%; }
+        ::selection { background: var(--signal); color: var(--ink); }
+        .visually-hidden {
+            height: 1px;
+            margin: -1px;
+            overflow: hidden;
+            padding: 0;
+            position: absolute;
+            width: 1px;
+            clip: rect(0 0 0 0);
+        }
+        .site-header {
+            align-items: center;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            justify-content: space-between;
+            padding: 1.5rem 0;
+        }
+        .wordmark {
+            color: var(--paper);
+            font-family: var(--mono);
+            font-size: .75rem;
+            letter-spacing: .05em;
+            text-decoration: none;
+            text-transform: uppercase;
+        }
+        .wordmark:hover { color: var(--signal); }
+        nav a {
+            color: var(--rust);
+            font-size: .75rem;
+            letter-spacing: .05em;
+            margin-left: 1.5rem;
+            text-decoration: none;
+            text-transform: uppercase;
+            transition: color .2s;
+        }
+        nav a:hover { color: var(--paper); }
+        .hero {
+            display: grid;
+            gap: 2rem;
+            grid-template-columns: 1fr;
+            padding: 4rem 0;
+        }
+        @media (min-width: 768px) {
+            .hero { grid-template-columns: 2fr 1fr; }
+        }
+        .hero-copy { max-width: 36rem; }
+        .eyebrow {
+            color: var(--muted);
+            font-size: .6875rem;
+            letter-spacing: .15em;
+            margin: 0 0 .75rem;
+            text-transform: uppercase;
+        }
+        h1 {
+            font-family: var(--display);
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 400;
+            line-height: 1.1;
+            margin: 0 0 1.5rem;
+        }
+        .lede {
+            color: var(--rust);
+            font-size: .9375rem;
+            line-height: 1.7;
+            margin: 0;
+        }
+        .lab-note {
+            background: rgba(83, 104, 120, .2);
+            border-left: 2px solid var(--panel);
+            padding: 1rem 1.25rem;
+        }
+        .lab-note span {
+            color: var(--muted);
+            display: block;
+            font-size: .625rem;
+            letter-spacing: .15em;
+            margin-bottom: .5rem;
+            text-transform: uppercase;
+        }
+        .lab-note strong {
+            color: var(--paper);
+            font-size: .875rem;
+            font-weight: 400;
+            line-height: 1.5;
+        }
+        .featured {
+            background: rgba(83, 104, 120, .1);
+            border: 1px solid var(--line);
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: 1fr;
+            margin: 3rem 0;
+            padding: 2rem;
+        }
+        @media (min-width: 768px) {
+            .featured { grid-template-columns: 1fr auto; align-items: center; }
+        }
+        .featured h2 {
+            font-family: var(--display);
+            font-size: 1.75rem;
+            font-weight: 400;
+            margin: .5rem 0;
+        }
+        .featured p { color: var(--rust); font-size: .875rem; line-height: 1.6; margin: 0; }
+        .featured a {
+            align-self: center;
+            background: var(--paper);
+            color: var(--ink);
+            font-size: .75rem;
+            letter-spacing: .05em;
+            padding: .875rem 1.5rem;
+            text-decoration: none;
+            text-transform: uppercase;
+            transition: transform .2s, box-shadow .2s;
+            white-space: nowrap;
+        }
+        .featured a:hover {
+            box-shadow: 0 4px 16px var(--shadow);
+            transform: translateY(-1px);
+        }
+        .catalog-heading {
+            border-top: 1px solid var(--line);
+            padding-top: 3rem;
+        }
+        .catalog-heading h2 {
+            font-family: var(--display);
+            font-size: 1.5rem;
+            font-weight: 400;
+            margin: .5rem 0 0;
+        }
+        .catalog-grid {
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: 1fr;
+            margin: 2rem 0 4rem;
+        }
+        @media (min-width: 640px) {
+            .catalog-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (min-width: 1024px) {
+            .catalog-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        .endpoint-card {
+            background: rgba(83, 104, 120, .08);
+            border: 1px solid var(--line);
+            transition: border-color .2s, transform .2s;
+        }
+        .endpoint-card:hover {
+            border-color: var(--panel);
+            transform: translateY(-2px);
+        }
+        .endpoint-card a {
+            color: inherit;
+            display: block;
+            padding: 1.5rem;
+            text-decoration: none;
+        }
+        .card-topline {
+            align-items: center;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: .75rem;
+        }
+        .card-topline span {
+            background: rgba(83, 104, 120, .3);
+            border-radius: 2px;
+            font-size: .625rem;
+            letter-spacing: .1em;
+            padding: .25rem .5rem;
+            text-transform: uppercase;
+        }
+        .endpoint-card h3 {
+            font-family: var(--display);
+            font-size: 1.25rem;
+            font-weight: 400;
+            margin: 0 0 .5rem;
+        }
+        .endpoint-card p {
+            color: var(--rust);
+            font-size: .8125rem;
+            line-height: 1.6;
+            margin: 0;
+        }
+        .method-badge {
+            display: inline-block;
+            font-size: .6875rem;
+            font-weight: 700;
+            margin-right: .5rem;
+            padding: .125rem .375rem;
+        }
+        .get { background: rgba(34, 197, 94, .2); color: #22c55e; }
+        .post { background: rgba(59, 130, 246, .2); color: #3b82f6; }
+        .tech-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+            margin-top: 1rem;
+        }
+        .tech-list span {
+            background: rgba(83, 104, 120, .15);
+            color: var(--muted);
+            font-size: .625rem;
+            letter-spacing: .05em;
+            padding: .25rem .5rem;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header class="site-header">
+            <a class="wordmark" href="/">inamute.mris.dev</a>
+            <nav>
+                <a href="/docs">API Docs</a>
+                <a href="https://github.com/ilmimris/inamute">GitHub</a>
+            </nav>
+        </header>
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">indonesian commute / transit schedules</p>
+                <h1>Real-time schedule data for Indonesian transit.</h1>
+                <p class="lede">
+                    Inamute provides structured access to commuter line schedules, station information,
+                    and route data. Built for developers building transit apps for Indonesian cities.
+                </p>
+            </div>
+            <aside class="lab-note">
+                <span>Status</span>
+                <strong>Early access. KRL Jabodetabek schedules available. More lines coming.</strong>
+            </aside>
+        </section>
+        <section class="featured">
+            <div>
+                <p class="eyebrow">Quick start</p>
+                <h2>Get schedules instantly</h2>
+                <p>No auth required for basic queries. Just hit the endpoint and go.</p>
+            </div>
+            <a href="/docs">View API Reference</a>
+        </section>
+        <section class="catalog-heading">
+            <p class="eyebrow">Endpoints</p>
+            <h2>Available resources</h2>
+        </section>
+        <section class="catalog-grid">
+            <article class="endpoint-card">
+                <a href="/docs">
+                    <div class="card-topline">
+                        <span class="method-badge get">GET</span>
+                        <span>public</span>
+                    </div>
+                    <h3>/api/stations</h3>
+                    <p>List all commuter line stations with codes, names, line info, and coordinates.</p>
+                </a>
+            </article>
+            <article class="endpoint-card">
+                <a href="/docs">
+                    <div class="card-topline">
+                        <span class="method-badge get">GET</span>
+                        <span>public</span>
+                    </div>
+                    <h3>/api/schedules</h3>
+                    <p>Query train schedules by station, type (weekday/weekend), and direction.</p>
+                </a>
+            </article>
+            <article class="endpoint-card">
+                <a href="/docs">
+                    <div class="card-topline">
+                        <span class="method-badge get">GET</span>
+                        <span>public</span>
+                    </div>
+                    <h3>/api/routes</h3>
+                    <p>Get available transit routes and their descriptions.</p>
+                </a>
+            </article>
+        </section>
+    </main>
+</body>
+</html>

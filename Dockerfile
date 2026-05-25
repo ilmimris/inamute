@@ -1,3 +1,20 @@
+# Builder stage
+FROM rust:1.88-slim AS builder
+
+WORKDIR /app
+
+# Install dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+# Copy source
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY migrations ./migrations
+COPY static ./static
+
+# Build release binary
+RUN cargo build --release
+
 # Runtime stage - distroless (no shell, no package manager, minimal attack surface)
 FROM gcr.io/distroless/cc-debian12
 
@@ -7,9 +24,10 @@ LABEL version="0.1.0"
 
 WORKDIR /app
 
-# Copy binary and migrations from builder
-COPY target/release/inamute .
-COPY migrations ./migrations
+# Copy binary, migrations, and static from builder
+COPY --from=builder /app/target/release/inamute .
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/static ./static
 
 EXPOSE 8080
 

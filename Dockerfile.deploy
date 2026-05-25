@@ -1,0 +1,23 @@
+# Minimal Dockerfile - copies pre-built artifacts
+FROM gcr.io/distroless/cc-debian12
+
+LABEL maintainer="Rafiul Ilmi <muhammadrafiulilmi@gmail.com>"
+LABEL description="Indonesian Commute Schedule API"
+LABEL version="0.1.0"
+
+WORKDIR /app
+
+# Copy pre-built binary, migrations, and static
+COPY target/release/inamute .
+COPY migrations ./migrations
+COPY static ./static
+
+EXPOSE 8080
+
+ENV BIND_ADDR=0.0.0.0:8080
+ENV RUST_LOG=info
+
+# Run as non-root user (distroless has built-in nonroot user)
+USER nonroot:nonroot
+
+CMD ["./inamute"]

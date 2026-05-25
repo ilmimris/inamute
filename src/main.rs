@@ -121,10 +121,19 @@ pub fn validate_api_key(api_key: &str, state: &AppState) -> Result<ApiKeyInfo, S
         .ok_or_else(|| "Invalid or inactive API key".to_string())
 }
 
-// ==================== API Endpoints ====================
+// ==================== Homepage ====================
 
 #[actix_web::get("/")]
-async fn health(state: web::Data<AppState>) -> HttpResponse {
+async fn homepage() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(include_str!("../static/index.html"))
+}
+
+// ==================== API Endpoints ====================
+
+#[actix_web::get("/api")]
+async fn api_health(state: web::Data<AppState>) -> HttpResponse {
     let db_status = sqlx::query("SELECT 1")
         .fetch_one(&state.db)
         .await
@@ -143,7 +152,7 @@ async fn health(state: web::Data<AppState>) -> HttpResponse {
     })
 }
 
-#[actix_web::get("/stations")]
+#[actix_web::get("/api/stations")]
 async fn get_stations(
     req: actix_web::HttpRequest,
     state: web::Data<AppState>,
@@ -202,7 +211,7 @@ async fn get_stations(
     }
 }
 
-#[actix_web::get("/schedules")]
+#[actix_web::get("/api/schedules")]
 async fn get_schedules(
     req: actix_web::HttpRequest,
     query: web::Query<HashMap<String, String>>,
@@ -293,7 +302,7 @@ async fn get_schedules(
     }
 }
 
-#[actix_web::get("/routes")]
+#[actix_web::get("/api/routes")]
 async fn get_routes(
     req: actix_web::HttpRequest,
     state: web::Data<AppState>,
@@ -414,7 +423,8 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .wrap(middleware::Logger::default())
-            .service(health)
+            .service(homepage)
+            .service(api_health)
             .service(get_stations)
             .service(get_schedules)
             .service(get_routes)
