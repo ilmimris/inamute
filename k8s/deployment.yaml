@@ -19,7 +19,7 @@ spec:
         - name: ghcr-secret
       containers:
         - name: inamute
-          image: ghcr.io/ilmimris/inamute:latest
+          image: ghcr.io/ilmimris/inamute:78d58c8
           ports:
             - containerPort: 8080
           env:
