@@ -1,0 +1,282 @@
+---
+import { createApiKey, listApiKeys, revokeApiKey } from "../../lib/api-keys";
+
+if (!Astro.locals.user) {
+  return Astro.redirect("/account/login");
+}
+
+let createdKey: string | null = null;
+let message: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action");
+
+  if (action === "create") {
+    createdKey = await createApiKey(
+      Astro.locals.user.id,
+      String(form.get("name") ?? "")
+    );
+    message = "API key created. This is the only time the full key will be shown.";
+  }
+
+  if (action === "revoke") {
+    await revokeApiKey(
+      Astro.locals.user.id,
+      String(form.get("keyId") ?? "")
+    );
+    message = "API key revoked.";
+  }
+}
+
+const keys = await listApiKeys(Astro.locals.user.id);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Account - Inamute</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap" />
+    <style>
+      :root {
+        --ink: #0a0a0a;
+        --muted: #aeb8c1;
+        --field: #12171d;
+        --paper: #e5e4e2;
+        --signal: #cfd6dc;
+        --rust: #7f93a3;
+        --panel: #536878;
+        --line: rgba(229, 228, 226, .18);
+        --danger: #e5a3a3;
+        --display: "Instrument Serif", Georgia, serif;
+        --mono: "Space Mono", monospace;
+      }
+      * { box-sizing: border-box; }
+      html {
+        background: var(--field);
+        color: var(--paper);
+        color-scheme: dark;
+        font-family: var(--mono);
+      }
+      body {
+        background: radial-gradient(circle at 18% 14%, rgba(83, 104, 120, .44), transparent 24rem),
+                    radial-gradient(circle at 82% 8%, rgba(229, 228, 226, .1), transparent 28rem),
+                    linear-gradient(90deg, rgba(229, 228, 226, .035) 1px, transparent 1px),
+                    linear-gradient(rgba(229, 228, 226, .035) 1px, transparent 1px),
+                    var(--field);
+        background-size: auto, auto, 48px 48px, 48px 48px, auto;
+        color: var(--paper);
+        margin: 0;
+        min-height: 100vh;
+      }
+      main {
+        margin: 0 auto;
+        max-width: 1180px;
+        padding: 1rem 1rem 4rem;
+      }
+      header {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 1rem;
+        justify-content: space-between;
+        margin-bottom: 3rem;
+        padding: 1.5rem 0;
+      }
+      h1, h2 {
+        line-height: 1.2;
+        margin: 0;
+      }
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        font-weight: 400;
+      }
+      h2 {
+        font-family: var(--display);
+        font-size: 1.5rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
+      }
+      p {
+        color: var(--rust);
+        line-height: 1.6;
+        margin: .5rem 0 0;
+      }
+      section {
+        background: rgba(83, 104, 120, .1);
+        border: 1px solid var(--line);
+        margin-bottom: 1rem;
+        padding: 1.5rem;
+      }
+      form {
+        display: grid;
+        gap: .75rem;
+      }
+      label {
+        color: var(--muted);
+        font-size: .9rem;
+      }
+      input {
+        background: rgba(10, 10, 10, .24);
+        border: 1px solid var(--line);
+        color: var(--paper);
+        font: inherit;
+        padding: .7rem .8rem;
+      }
+      button {
+        background: var(--paper);
+        border: 0;
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+        font-size: .75rem;
+        font-weight: 700;
+        letter-spacing: .05em;
+        padding: .7rem .9rem;
+        text-transform: uppercase;
+      }
+      .danger {
+        background: transparent;
+        border: 1px solid var(--danger);
+        color: var(--danger);
+      }
+      .notice {
+        background: rgba(83, 104, 120, .2);
+        border-left: 2px solid var(--panel);
+      }
+      code {
+        background: rgba(10, 10, 10, .28);
+        display: block;
+        overflow-wrap: anywhere;
+        padding: .75rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th, td {
+        border-bottom: 1px solid var(--line);
+        padding: .75rem .5rem;
+        text-align: left;
+        vertical-align: middle;
+      }
+      th {
+        color: var(--muted);
+        font-size: .8rem;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+      }
+      .inline-form {
+        display: block;
+      }
+      .account-email {
+        color: var(--rust);
+        font-size: .9rem;
+        margin-top: .5rem;
+      }
+      @media (max-width: 720px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        table, thead, tbody, tr, th, td {
+          display: block;
+        }
+        thead {
+          display: none;
+        }
+        td {
+          border-bottom: 0;
+          padding: .35rem 0;
+        }
+        tr {
+          border-bottom: 1px solid var(--line);
+          padding: .75rem 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>API Keys</h1>
+          <div class="account-email">{Astro.locals.user.email}</div>
+        </div>
+        <button class="danger" id="sign-out" type="button">Sign out</button>
+      </header>
+
+      {message && (
+        <section class="notice">
+          <strong>{message}</strong>
+          {createdKey && <code>{createdKey}</code>}
+        </section>
+      )}
+
+      <section>
+        <h2>Create API Key</h2>
+        <form method="post">
+          <input type="hidden" name="action" value="create" />
+          <label for="name">Key name</label>
+          <input id="name" name="name" maxlength="100" placeholder="Production app" />
+          <button type="submit">Create key</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Your Keys</h2>
+        {keys.length === 0 ? (
+          <p>No API keys yet.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Prefix</th>
+                <th>Limit</th>
+                <th>Status</th>
+                <th>Last used</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {keys.map((key) => (
+                <tr>
+                  <td>{key.name}</td>
+                  <td><code>{key.keyPrefix}...</code></td>
+                  <td>{key.rateLimitRpm} rpm</td>
+                  <td>{key.isActive ? "Active" : "Revoked"}</td>
+                  <td>{key.lastUsedAt ? key.lastUsedAt.toLocaleString() : "Never"}</td>
+                  <td>
+                    {key.isActive && (
+                      <form class="inline-form" method="post">
+                        <input type="hidden" name="action" value="revoke" />
+                        <input type="hidden" name="keyId" value={key.id} />
+                        <button class="danger" type="submit">Revoke</button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </main>
+    <script>
+      import { authClient } from "../../lib/auth-client";
+
+      document.querySelector("#sign-out")?.addEventListener("click", async () => {
+        await authClient.signOut({
+          fetchOptions: {
+            onSuccess: () => {
+              window.location.href = "/account/login";
+            }
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "inamute-account",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1",
+    "build": "astro check && astro build",
+    "preview": "astro preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/node": "^9.3.0",
+    "astro": "^5.10.0",
+    "better-auth": "^1.3.26",
+    "pg": "^8.13.1",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.11"
+  }
+}

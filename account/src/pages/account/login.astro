@@ -1,0 +1,153 @@
+---
+import { hasGoogleAuthConfig } from "../../lib/auth";
+
+if (Astro.locals.user) {
+  return Astro.redirect("/account");
+}
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in - Inamute</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap" />
+    <style>
+      :root {
+        --ink: #0a0a0a;
+        --muted: #aeb8c1;
+        --field: #12171d;
+        --paper: #e5e4e2;
+        --signal: #cfd6dc;
+        --rust: #7f93a3;
+        --panel: #536878;
+        --line: rgba(229, 228, 226, .18);
+        --display: "Instrument Serif", Georgia, serif;
+        --mono: "Space Mono", monospace;
+      }
+      * { box-sizing: border-box; }
+      html {
+        background: var(--field);
+        color: var(--paper);
+        color-scheme: dark;
+        font-family: var(--mono);
+      }
+      body {
+        align-items: center;
+        background: radial-gradient(circle at 18% 14%, rgba(83, 104, 120, .44), transparent 24rem),
+                    radial-gradient(circle at 82% 8%, rgba(229, 228, 226, .1), transparent 28rem),
+                    linear-gradient(90deg, rgba(229, 228, 226, .035) 1px, transparent 1px),
+                    linear-gradient(rgba(229, 228, 226, .035) 1px, transparent 1px),
+                    var(--field);
+        background-size: auto, auto, 48px 48px, 48px 48px, auto;
+        display: flex;
+        justify-content: center;
+        margin: 0;
+        min-height: 100vh;
+        padding: 1rem;
+      }
+      main {
+        background: rgba(83, 104, 120, .12);
+        border: 1px solid var(--line);
+        max-width: 28rem;
+        padding: 2rem;
+        width: 100%;
+      }
+      a {
+        color: var(--rust);
+        font-size: .75rem;
+        letter-spacing: .05em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(2rem, 8vw, 3rem);
+        font-weight: 400;
+        line-height: 1.1;
+        margin: 1.5rem 0 1rem;
+      }
+      p {
+        color: var(--rust);
+        line-height: 1.7;
+        margin: 0 0 1.5rem;
+      }
+      button {
+        background: var(--paper);
+        border: 0;
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+        font-size: .75rem;
+        font-weight: 700;
+        letter-spacing: .05em;
+        padding: .9rem 1rem;
+        text-transform: uppercase;
+        width: 100%;
+      }
+      button:disabled {
+        cursor: wait;
+        opacity: .72;
+      }
+      .error {
+        background: rgba(127, 41, 41, .28);
+        border-left: 2px solid #e5a3a3;
+        color: #f2c4c4;
+        display: none;
+        font-size: .8125rem;
+        line-height: 1.6;
+        margin-top: 1rem;
+        padding: .8rem 1rem;
+      }
+      .error[data-visible="true"] {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/">inamute.mris.dev</a>
+      <h1>Sign in to manage API keys.</h1>
+      <p>Public schedule queries stay open. Google sign-in is only for creating keys and tracking their usage.</p>
+      <button
+        id="google-sign-in"
+        type="button"
+        data-configured={String(hasGoogleAuthConfig)}
+      >
+        Continue with Google
+      </button>
+      <div id="auth-error" class="error">
+        Google login is not configured for this running server. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BETTER_AUTH_SECRET, and BETTER_AUTH_URL, then restart Astro.
+      </div>
+    </main>
+    <script>
+      import { authClient } from "../../lib/auth-client";
+
+      const button = document.querySelector("#google-sign-in");
+      const error = document.querySelector("#auth-error");
+
+      button?.addEventListener("click", async () => {
+        if (button.getAttribute("data-configured") !== "true") {
+          error?.setAttribute("data-visible", "true");
+          return;
+        }
+
+        button.setAttribute("disabled", "true");
+        error?.removeAttribute("data-visible");
+
+        const result = await authClient.signIn.social({
+          provider: "google",
+          callbackURL: "/account"
+        });
+
+        if (result?.error) {
+          button.removeAttribute("disabled");
+          if (error) {
+            error.textContent = result.error.message ?? "Google sign-in failed.";
+            error.setAttribute("data-visible", "true");
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

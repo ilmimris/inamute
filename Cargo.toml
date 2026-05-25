@@ -19,11 +19,14 @@ log = "0.4"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "time"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 sha2 = "0.10"
+hmac = "0.12"
 hex = "0.4"
 rand = "0.8"
 thiserror = "1"
 futures = "0.3"
 dotenvy = "0.15"
+utoipa = { version = "5", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "9", features = ["actix-web", "vendored"] }
 
 [profile.release]
 opt-level = "s"

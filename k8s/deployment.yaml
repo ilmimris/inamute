@@ -24,7 +24,15 @@ spec:
             - containerPort: 8080
           env:
             - name: DATABASE_URL
-              value: "postgresql://inamute:inamute_s3cur3_p@ss_2024@inamute-db-rw.cnpg-databases.svc.cluster.local:5432/inamute"
+              valueFrom:
+                secretKeyRef:
+                  name: inamute-app-secrets
+                  key: DATABASE_URL
+            - name: API_KEY_HASH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: inamute-app-secrets
+                  key: API_KEY_HASH_SECRET
             - name: BIND_ADDR
               value: "0.0.0.0:8080"
             - name: RUST_LOG
