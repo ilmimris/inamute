@@ -2,17 +2,26 @@ use actix_web::{
     web, App, HttpServer, HttpResponse, middleware, Error,
     http::StatusCode,
 };
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, Duration};
 use dotenvy::dotenv;
+use utoipa::{Modify, OpenApi, ToSchema};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
+use utoipa_swagger_ui::SwaggerUi;
+
+type HmacSha256 = Hmac<Sha256>;
+const API_KEY_PREFIX: &str = "inamute_live_";
+const MIN_API_KEY_HASH_SECRET_LEN: usize = 32;
 
 // ==================== Data Models ====================
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct Station {
     pub code: String,
     pub name: String,
@@ -22,7 +31,7 @@ pub struct Station {
     pub address: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct Schedule {
     pub station_code: String,
     pub station_name: String,
@@ -31,22 +40,29 @@ pub struct Schedule {
     pub direction: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct Route {
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
 #[derive(Serialize)]
-pub struct ApiResponse<T: Serialize> {
+pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
     pub message: Option<String>,
     pub meta: Option<ApiMeta>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ApiMeta {
     pub total: usize,
     pub page: u32,
     pub per_page: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
     pub service: String,
@@ -54,41 +70,112 @@ pub struct HealthResponse {
     pub database: String,
 }
 
+#[derive(ToSchema)]
+pub struct EmptyApiResponse {
+    pub success: bool,
+    pub data: Option<()>,
+    pub message: Option<String>,
+    pub meta: Option<ApiMeta>,
+}
+
+#[derive(ToSchema)]
+pub struct HealthApiResponse {
+    pub success: bool,
+    pub data: Option<HealthResponse>,
+    pub message: Option<String>,
+    pub meta: Option<ApiMeta>,
+}
+
+#[derive(ToSchema)]
+pub struct StationsApiResponse {
+    pub success: bool,
+    pub data: Option<Vec<Station>>,
+    pub message: Option<String>,
+    pub meta: Option<ApiMeta>,
+}
+
+#[derive(ToSchema)]
+pub struct RoutesApiResponse {
+    pub success: bool,
+    pub data: Option<Vec<Route>>,
+    pub message: Option<String>,
+    pub meta: Option<ApiMeta>,
+}
+
+#[derive(ToSchema)]
+pub struct SchedulesApiResponse {
+    pub success: bool,
+    pub data: Option<Vec<Schedule>>,
+    pub message: Option<String>,
+    pub meta: Option<ApiMeta>,
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(api_health, get_stations, get_routes, get_schedules),
+    components(
+        schemas(
+            ApiMeta,
+            EmptyApiResponse,
+            HealthResponse,
+            HealthApiResponse,
+            Station,
+            StationsApiResponse,
+            Route,
+            RoutesApiResponse,
+            Schedule,
+            SchedulesApiResponse
+        )
+    ),
+    modifiers(&SecurityAddon),
+    tags(
+        (name = "health", description = "Service health and readiness"),
+        (name = "stations", description = "Transit station data"),
+        (name = "routes", description = "Transit route data"),
+        (name = "schedules", description = "Transit schedule queries")
+    )
+)]
+struct ApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "ApiKeyAuth",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("X-API-Key"))),
+            );
+        }
+    }
+}
+
 // ==================== AppState ====================
 
 pub struct AppState {
     pub db: PgPool,
-    pub api_keys: Arc<Mutex<HashMap<String, ApiKeyInfo>>>,
+    pub api_key_hash_secret: String,
     pub rate_limits: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
 }
 
 #[derive(Clone)]
 pub struct ApiKeyInfo {
-    pub name: String,
-    pub owner: String,
     pub rate_limit_rpm: u32,
-    pub is_active: bool,
+    pub key_hash: String,
 }
 
 // ==================== Rate Limiting Helper ====================
 
 fn check_rate_limit(
     state: &AppState,
-    peer_addr: &str,
-    api_key: Option<&str>,
+    rate_limit_key: &str,
+    rpm_limit: u32,
 ) -> Result<u32, HttpResponse> {
-    let rpm_limit = if let Some(key) = api_key {
-        let keys = state.api_keys.lock().unwrap();
-        keys.get(key).map(|k| k.rate_limit_rpm).unwrap_or(10)
-    } else {
-        10 // Default 10 RPM for unauthenticated
-    };
-    
     let now = Instant::now();
     let window = Duration::from_secs(60);
     
     let mut limits = state.rate_limits.lock().unwrap();
-    let requests = limits.entry(peer_addr.to_string()).or_insert_with(Vec::new);
+    let requests = limits.entry(rate_limit_key.to_string()).or_insert_with(Vec::new);
     
     // Clean old entries outside the window
     requests.retain(|t| t.elapsed() < window);
@@ -113,12 +200,163 @@ fn check_rate_limit(
 
 // ==================== API Key Authentication ====================
 
-pub fn validate_api_key(api_key: &str, state: &AppState) -> Result<ApiKeyInfo, String> {
-    let keys = state.api_keys.lock().unwrap();
-    keys.get(api_key)
-        .filter(|k| k.is_active)
-        .cloned()
-        .ok_or_else(|| "Invalid or inactive API key".to_string())
+pub fn hash_api_key(api_key: &str, secret: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .expect("HMAC accepts keys of any size");
+    mac.update(api_key.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+fn is_valid_api_key_format(api_key: &str) -> bool {
+    api_key.starts_with(API_KEY_PREFIX)
+        && api_key.len() >= API_KEY_PREFIX.len() + 24
+        && api_key.len() <= 128
+        && api_key
+            .as_bytes()
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
+
+fn load_api_key_hash_secret() -> std::io::Result<String> {
+    let secret = std::env::var("API_KEY_HASH_SECRET").map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "API_KEY_HASH_SECRET must be set and shared by Actix and the Astro account app",
+        )
+    })?;
+
+    if secret.len() < MIN_API_KEY_HASH_SECRET_LEN {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "API_KEY_HASH_SECRET must be at least {} characters",
+                MIN_API_KEY_HASH_SECRET_LEN
+            ),
+        ));
+    }
+
+    Ok(secret)
+}
+
+#[cfg(debug_assertions)]
+async fn seed_local_test_api_key(pool: &PgPool, api_key_hash_secret: &str) {
+    const TEST_USER_ID: &str = "local-test-user";
+    const TEST_API_KEY_ID: &str = "00000000-0000-0000-0000-000000000001";
+    const TEST_API_KEY: &str = "inamute_live_local_test_key_2024_abc123def456";
+
+    if let Err(e) = sqlx::query(
+        r#"INSERT INTO "user" (id, name, email, "emailVerified")
+           VALUES ($1, 'Local Test User', 'local-test@inamute.dev', true)
+           ON CONFLICT (id) DO NOTHING"#,
+    )
+    .bind(TEST_USER_ID)
+    .execute(pool)
+    .await
+    {
+        log::warn!("Failed to seed local test user: {}", e);
+        return;
+    }
+
+    if let Err(e) = sqlx::query(
+        "INSERT INTO account_api_keys
+            (id, user_id, key_hash, key_prefix, name, rate_limit_rpm, is_active)
+         VALUES ($1::uuid, $2, $3, $4, 'Local Swagger test key', 60, true)
+         ON CONFLICT (key_hash) DO UPDATE
+         SET is_active = true,
+             rate_limit_rpm = EXCLUDED.rate_limit_rpm,
+             expires_at = NULL",
+    )
+    .bind(TEST_API_KEY_ID)
+    .bind(TEST_USER_ID)
+    .bind(hash_api_key(TEST_API_KEY, api_key_hash_secret))
+    .bind("inamute_live_local")
+    .execute(pool)
+    .await
+    {
+        log::warn!("Failed to seed local test API key: {}", e);
+        return;
+    }
+
+    log::info!(
+        "Local test API key seeded because SEED_LOCAL_TEST_API_KEY=true"
+    );
+}
+
+async fn validate_api_key(api_key: &str, state: &AppState) -> Result<ApiKeyInfo, HttpResponse> {
+    if !is_valid_api_key_format(api_key) {
+        return Err(unauthorized_response());
+    }
+
+    let key_hash = hash_api_key(api_key, &state.api_key_hash_secret);
+
+    match sqlx::query_as::<_, (i32,)>(
+        "SELECT rate_limit_rpm
+         FROM account_api_keys
+         WHERE key_hash = $1
+           AND is_active = true
+           AND (expires_at IS NULL OR expires_at > NOW())"
+    )
+    .bind(&key_hash)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some((rate_limit_rpm,))) => {
+            if let Err(e) = sqlx::query(
+                "UPDATE account_api_keys SET last_used_at = NOW() WHERE key_hash = $1"
+            )
+            .bind(&key_hash)
+            .execute(&state.db)
+            .await
+            {
+                log::warn!("Failed to update API key last_used_at: {}", e);
+            }
+
+            Ok(ApiKeyInfo {
+                rate_limit_rpm: rate_limit_rpm.max(1) as u32,
+                key_hash,
+            })
+        }
+        Ok(None) => Err(unauthorized_response()),
+        Err(e) => {
+            log::error!("Error validating API key: {}", e);
+            Err(HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Failed to validate API key".to_string()),
+                meta: None,
+            }))
+        }
+    }
+}
+
+fn unauthorized_response() -> HttpResponse {
+    HttpResponse::Unauthorized().json(ApiResponse::<()> {
+        success: false,
+        data: None,
+        message: Some("Invalid API key".to_string()),
+        meta: None,
+    })
+}
+
+async fn rate_limit_request(
+    req: &actix_web::HttpRequest,
+    state: &AppState,
+) -> Result<u32, HttpResponse> {
+    let conn_info = req.connection_info().clone();
+    let peer_addr = conn_info.peer_addr().unwrap_or("127.0.0.1").to_string();
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| !v.trim().is_empty());
+
+    let (rate_limit_key, rpm_limit) = if let Some(key) = api_key {
+        let key_info = validate_api_key(key, state).await?;
+        (format!("key:{}", key_info.key_hash), key_info.rate_limit_rpm)
+    } else {
+        (format!("ip:{}", peer_addr), 10)
+    };
+
+    check_rate_limit(state, &rate_limit_key, rpm_limit)
 }
 
 // ==================== Homepage ====================
@@ -130,8 +368,23 @@ async fn homepage() -> HttpResponse {
         .body(include_str!("../static/index.html"))
 }
 
+#[actix_web::get("/docs")]
+async fn docs_redirect() -> HttpResponse {
+    HttpResponse::Found()
+        .append_header(("Location", "/docs/"))
+        .finish()
+}
+
 // ==================== API Endpoints ====================
 
+#[utoipa::path(
+    get,
+    path = "/api",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service health and database connectivity", body = HealthApiResponse)
+    )
+)]
 #[actix_web::get("/api")]
 async fn api_health(state: web::Data<AppState>) -> HttpResponse {
     let db_status = sqlx::query("SELECT 1")
@@ -152,18 +405,27 @@ async fn api_health(state: web::Data<AppState>) -> HttpResponse {
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/stations",
+    tag = "stations",
+    security(
+        (),
+        ("ApiKeyAuth" = [])
+    ),
+    responses(
+        (status = 200, description = "All stations", body = StationsApiResponse),
+        (status = 401, description = "Invalid, inactive, or expired API key", body = EmptyApiResponse),
+        (status = 429, description = "Rate limit exceeded", body = EmptyApiResponse),
+        (status = 500, description = "Failed to fetch stations", body = StationsApiResponse)
+    )
+)]
 #[actix_web::get("/api/stations")]
 async fn get_stations(
     req: actix_web::HttpRequest,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let conn_info = req.connection_info().clone();
-    let peer_addr = conn_info.peer_addr().unwrap_or("127.0.0.1").to_string();
-    let api_key = req.headers()
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok());
-    
-    match check_rate_limit(&state, &peer_addr, api_key) {
+    match rate_limit_request(&req, &state).await {
         Ok(remaining) => {
             match sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, Option<String>)>(
                 "SELECT station_code, name, line, latitude::text, longitude::text, address FROM stations ORDER BY id"
@@ -211,19 +473,33 @@ async fn get_stations(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/schedules",
+    tag = "schedules",
+    params(
+        ("station" = Option<String>, Query, description = "Station code, for example DA or JM"),
+        ("type" = Option<String>, Query, description = "Schedule type. Defaults to weekday", example = "weekday"),
+        ("direction" = Option<String>, Query, description = "Destination direction, for example Dukuh Atas or Jati Mulya")
+    ),
+    security(
+        (),
+        ("ApiKeyAuth" = [])
+    ),
+    responses(
+        (status = 200, description = "Schedules matching the query", body = SchedulesApiResponse),
+        (status = 401, description = "Invalid, inactive, or expired API key", body = EmptyApiResponse),
+        (status = 429, description = "Rate limit exceeded", body = EmptyApiResponse),
+        (status = 500, description = "Failed to fetch schedules", body = SchedulesApiResponse)
+    )
+)]
 #[actix_web::get("/api/schedules")]
 async fn get_schedules(
     req: actix_web::HttpRequest,
     query: web::Query<HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let conn_info = req.connection_info().clone();
-    let peer_addr = conn_info.peer_addr().unwrap_or("127.0.0.1").to_string();
-    let api_key = req.headers()
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok());
-    
-    match check_rate_limit(&state, &peer_addr, api_key) {
+    match rate_limit_request(&req, &state).await {
         Ok(remaining) => {
             let station_code = query.get("station").map(|s| s.as_str());
             let schedule_type = query.get("type").map(|s| s.as_str()).unwrap_or("weekday");
@@ -302,18 +578,27 @@ async fn get_schedules(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/routes",
+    tag = "routes",
+    security(
+        (),
+        ("ApiKeyAuth" = [])
+    ),
+    responses(
+        (status = 200, description = "All routes", body = RoutesApiResponse),
+        (status = 401, description = "Invalid, inactive, or expired API key", body = EmptyApiResponse),
+        (status = 429, description = "Rate limit exceeded", body = EmptyApiResponse),
+        (status = 500, description = "Failed to fetch routes", body = EmptyApiResponse)
+    )
+)]
 #[actix_web::get("/api/routes")]
 async fn get_routes(
     req: actix_web::HttpRequest,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let conn_info = req.connection_info().clone();
-    let peer_addr = conn_info.peer_addr().unwrap_or("127.0.0.1").to_string();
-    let api_key = req.headers()
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok());
-    
-    match check_rate_limit(&state, &peer_addr, api_key) {
+    match rate_limit_request(&req, &state).await {
         Ok(remaining) => {
             match sqlx::query_as::<_, (String, String, Option<String>)>(
                 "SELECT route_code, name, description FROM routes ORDER BY id"
@@ -322,13 +607,17 @@ async fn get_routes(
             .await
             {
                 Ok(rows) => {
-                    let route_data: Vec<(String, String, Option<String>)> = rows;
-                    let total = route_data.len();
+                    let routes: Vec<Route> = rows.iter().map(|r| Route {
+                        code: r.0.clone(),
+                        name: r.1.clone(),
+                        description: r.2.clone(),
+                    }).collect();
+                    let total = routes.len();
                     Ok(HttpResponse::Ok()
                         .append_header(("X-RateLimit-Remaining", remaining.to_string()))
                         .json(ApiResponse {
                             success: true,
-                            data: Some(route_data),
+                            data: Some(routes),
                             message: None,
                             meta: Some(ApiMeta {
                                 total,
@@ -352,35 +641,6 @@ async fn get_routes(
     }
 }
 
-// ==================== API Key Management ====================
-
-pub async fn seed_api_keys(state: &web::Data<AppState>) {
-    let mut keys = state.api_keys.lock().unwrap();
-    
-    // Add default API keys for testing
-    let test_key = "inamute_test_key_2024_abc123def456";
-    keys.insert(test_key.to_string(), ApiKeyInfo {
-        name: "Test Key".to_string(),
-        owner: "system".to_string(),
-        rate_limit_rpm: 10,
-        is_active: true,
-    });
-    
-    // Production key
-    let prod_key = "inamute_prod_key_2024_xyz789ghi012";
-    keys.insert(prod_key.to_string(), ApiKeyInfo {
-        name: "Production Key".to_string(),
-        owner: "ilmimris".to_string(),
-        rate_limit_rpm: 10,
-        is_active: true,
-    });
-    
-    log::info!("API keys seeded successfully");
-    log::info!("Test key: {}", test_key);
-    log::info!("Prod key: {}", prod_key);
-    log::info!("Use header: X-API-Key: <your-key>");
-}
-
 // ==================== Main ====================
 
 #[actix_web::main]
@@ -391,7 +651,7 @@ async fn main() -> std::io::Result<()> {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://inamute:inamute_password@localhost:5432/inamute".to_string());
     
-    log::info!("Connecting to database: {}", database_url);
+    log::info!("Connecting to database");
     
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -405,15 +665,19 @@ async fn main() -> std::io::Result<()> {
         .run(&pool)
         .await
         .expect("Failed to run migrations");
-    
+
+    let api_key_hash_secret = load_api_key_hash_secret()?;
+
+    #[cfg(debug_assertions)]
+    if std::env::var("SEED_LOCAL_TEST_API_KEY").as_deref() == Ok("true") {
+        seed_local_test_api_key(&pool, &api_key_hash_secret).await;
+    }
+
     let app_state = web::Data::new(AppState {
         db: pool,
-        api_keys: Arc::new(Mutex::new(HashMap::new())),
+        api_key_hash_secret,
         rate_limits: Arc::new(Mutex::new(HashMap::new())),
     });
-    
-    // Seed API keys
-    seed_api_keys(&app_state).await;
     
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     
@@ -424,12 +688,54 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .wrap(middleware::Logger::default())
             .service(homepage)
+            .service(docs_redirect)
             .service(api_health)
             .service(get_stations)
             .service(get_schedules)
             .service(get_routes)
+            .service(
+                SwaggerUi::new("/docs/{_:.*}")
+                    .url("/api-docs/openapi.json", ApiDoc::openapi())
+            )
     })
     .bind(&bind_addr)?
     .run()
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_api_key_uses_sha256_hex() {
+        assert_eq!(
+            hash_api_key(
+                "inamute_live_test",
+                "test-secret-that-is-long-enough-for-hmac"
+            ),
+            "f9ad2f3f60ff8758446eba7916a63b2693330259e895af8e82b0effa72d0b8b1"
+        );
+    }
+
+    #[test]
+    fn api_key_format_rejects_non_live_or_unsafe_values() {
+        assert!(is_valid_api_key_format("inamute_live_abcdefghijklmnopqrstuvwxyz"));
+        assert!(!is_valid_api_key_format("inamute_test_key_2024_abc123def456"));
+        assert!(!is_valid_api_key_format("inamute_live_short"));
+        assert!(!is_valid_api_key_format("inamute_live_has space in it"));
+    }
+
+    #[actix_rt::test]
+    async fn rate_limit_allows_until_limit_then_rejects() {
+        let state = AppState {
+            db: PgPoolOptions::new().connect_lazy("postgresql://example").unwrap(),
+            api_key_hash_secret: "test-secret-that-is-long-enough-for-hmac".to_string(),
+            rate_limits: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        assert_eq!(check_rate_limit(&state, "ip:127.0.0.1", 2).unwrap(), 1);
+        assert_eq!(check_rate_limit(&state, "ip:127.0.0.1", 2).unwrap(), 0);
+        assert!(check_rate_limit(&state, "ip:127.0.0.1", 2).is_err());
+    }
 }

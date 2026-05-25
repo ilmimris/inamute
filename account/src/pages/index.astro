@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="description" content="Inamute account and API key management" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inamute Account</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap" />
+    <style>
+      :root {
+        --ink: #0a0a0a;
+        --muted: #aeb8c1;
+        --field: #12171d;
+        --paper: #e5e4e2;
+        --signal: #cfd6dc;
+        --rust: #7f93a3;
+        --panel: #536878;
+        --line: rgba(229, 228, 226, .18);
+        --shadow: rgba(0, 0, 0, .32);
+        --display: "Instrument Serif", Georgia, serif;
+        --mono: "Space Mono", monospace;
+      }
+      * { box-sizing: border-box; }
+      html {
+        background: var(--field);
+        color: var(--paper);
+        color-scheme: dark;
+        font-family: var(--mono);
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at 18% 14%, rgba(83, 104, 120, .44), transparent 24rem),
+                    radial-gradient(circle at 82% 8%, rgba(229, 228, 226, .1), transparent 28rem),
+                    linear-gradient(90deg, rgba(229, 228, 226, .035) 1px, transparent 1px),
+                    linear-gradient(rgba(229, 228, 226, .035) 1px, transparent 1px),
+                    var(--field);
+        background-size: auto, auto, 48px 48px, 48px 48px, auto;
+      }
+      main {
+        margin: 0 auto;
+        max-width: 1180px;
+        padding: 1rem;
+      }
+      header {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        padding: 1.5rem 0;
+      }
+      a {
+        color: var(--paper);
+      }
+      .wordmark, nav a {
+        font-size: .75rem;
+        letter-spacing: .05em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+      nav a {
+        color: var(--rust);
+        margin-left: 1.5rem;
+      }
+      .hero {
+        display: grid;
+        gap: 2rem;
+        grid-template-columns: 1fr;
+        padding: 4rem 0;
+      }
+      @media (min-width: 768px) {
+        .hero { grid-template-columns: 2fr 1fr; }
+      }
+      .eyebrow {
+        color: var(--muted);
+        font-size: .6875rem;
+        letter-spacing: .15em;
+        margin: 0 0 .75rem;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-family: var(--display);
+        font-size: clamp(2.5rem, 5vw, 4rem);
+        font-weight: 400;
+        line-height: 1.1;
+        margin: 0 0 1.5rem;
+      }
+      p {
+        color: var(--rust);
+        font-size: .9375rem;
+        line-height: 1.7;
+        margin: 0;
+      }
+      .lab-note {
+        background: rgba(83, 104, 120, .2);
+        border-left: 2px solid var(--panel);
+        padding: 1rem 1.25rem;
+      }
+      .cta {
+        background: var(--paper);
+        color: var(--ink);
+        display: inline-block;
+        font-size: .75rem;
+        letter-spacing: .05em;
+        margin-top: 1.5rem;
+        padding: .875rem 1.5rem;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="wordmark" href="/">inamute.mris.dev</a>
+        <nav>
+          <a href="/account">Account</a>
+          <a href="https://github.com/ilmimris/inamute">GitHub</a>
+        </nav>
+      </header>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">indonesian commute / developer access</p>
+          <h1>Transit data stays public. API keys live in your account.</h1>
+          <p>Use Inamute without signing in for basic schedule queries. Sign in only when you need an API key and usage tracking.</p>
+          <a class="cta" href="/account">Manage API Keys</a>
+        </div>
+        <aside class="lab-note">
+          <p class="eyebrow">Access</p>
+          <p>Public endpoints stay open. Account login is only required for creating and managing API keys.</p>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>
